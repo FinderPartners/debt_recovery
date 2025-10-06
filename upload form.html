@@ -295,8 +295,8 @@
     </div>
 
     <script>
-        // Configuration - Update this with your n8n webhook URL
-        const WEBHOOK_URL = 'hhttps://blindly-logical-liger.ngrok-free.app/webhook/1GehZ0m-zwaq_iMxoX_5SocsSqPgDMhpK';
+        // Configuration - UPDATE THIS with your actual n8n webhook URL
+        const WEBHOOK_URL = 'https://blindly-logical-liger.ngrok-free.app/webhook/1GehZ0m-zwaq_iMxoX_5SocsSqPgDMhpK';
 
         const fileUploadArea = document.getElementById('fileUploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -399,28 +399,36 @@
                 // Read file as base64
                 const base64File = await readFileAsBase64(selectedFile);
 
-                // Prepare payload
+                // Prepare payload with base64 encoded file
                 const payload = {
                     username: username,
                     password: password,
                     fileName: selectedFile.name,
                     fileData: base64File,
-                    fileSize: selectedFile.size
+                    fileSize: selectedFile.size,
+                    mimeType: selectedFile.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 };
 
                 // Send to n8n webhook
                 const response = await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(payload)
                 });
 
-                const result = await response.json();
+                // Handle response
+                let result;
+                try {
+                    result = await response.json();
+                } catch (e) {
+                    result = { success: response.ok };
+                }
 
-                if (response.ok && result.success) {
-                    showSuccess(`✅ Success! ${result.recordsProcessed} records processed successfully.`);
+                if (response.ok) {
+                    const recordsProcessed = result.recordsProcessed || result.total || 'All';
+                    showSuccess(`✅ Success! ${recordsProcessed} records processed successfully.`);
                     
                     // Reset form after 3 seconds
                     setTimeout(() => {
@@ -430,11 +438,13 @@
                         hideMessages();
                     }, 3000);
                 } else {
-                    showError(result.error || 'Upload failed. Please check your credentials and try again.');
+                    const errorMsg = result.error || result.message || 'Upload failed. Please check your credentials and try again.';
+                    showError(errorMsg);
                 }
 
             } catch (error) {
-                showError('An error occurred during upload: ' + error.message);
+                console.error('Upload error:', error);
+                showError('Connection error: Unable to reach the server. Please check your internet connection and try again.');
             } finally {
                 submitBtn.disabled = false;
                 loading.classList.remove('show');
@@ -446,10 +456,11 @@
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => {
+                    // Remove the data URL prefix (e.g., "data:application/vnd...;base64,")
                     const base64 = reader.result.split(',')[1];
                     resolve(base64);
                 };
-                reader.onerror = reject;
+                reader.onerror = () => reject(new Error('Failed to read file'));
                 reader.readAsDataURL(file);
             });
         }
